@@ -32,7 +32,7 @@ app.layout = html.Div(
     ]
 )
 
-
+# コールバックとなるPyScriptコードを直接記述する
 @pys_callback(
     app,
     {"type": "mpy"},
@@ -43,6 +43,7 @@ def update_output(value):
     return f"選択された値: {value}ですよ!"
 
 
+# 別ファイルで記述したPyScriptコードを使用する
 pys_set_callback(
     app,
     {"func": "update_output2", "script": "/assets/callback.py", "type": "mpy"},
@@ -50,6 +51,7 @@ pys_set_callback(
     Input("my-slider-2", "value"),
 )
 
+# pys_callbackを使用するためにrun直前にこの関数を呼び出す
 pys_start()
 
 # サーバー起動

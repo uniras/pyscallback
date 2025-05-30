@@ -60,11 +60,12 @@ def pys_set_callback(app: Dash, config: dict[str, Any], *args) -> None:
 
     pys_callback_functions.append(funcname)
 
-    pys_add_scripts[script] = {
-        "scr": script + cache_str,
-        "config": config_str,
-        "type": pys_type,
-    }
+    if script not in pys_add_scripts:
+        pys_add_scripts[script] = {
+            "scr": script + cache_str,
+            "config": config_str,
+            "type": pys_type,
+        }
 
     app.clientside_callback(
         ClientsideFunction(namespace=PYSCALLBACK_NAMESPACE, function_name=funcname),
