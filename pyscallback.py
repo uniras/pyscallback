@@ -12,6 +12,8 @@ import os
 PYSCRIPT_TYPE = ["py", "mpy", "py-game"]
 PYSCRIPT_VERSION = "2025.5.1"
 PYSCALLBACK_JS_FILENAME = "__pyscallback.js"
+PYSCALLBACK_OBJECT_NAME = "pyscallback"
+PYSCALLBACK_NAMESPACE = "__pyscallbacks"
 
 pys_callback_functions: list[str] = []
 pys_add_scripts: dict[str, Any] = {}
@@ -65,7 +67,7 @@ def pys_set_callback(app: Dash, config: dict[str, Any], *args) -> None:
     }
 
     app.clientside_callback(
-        ClientsideFunction(namespace="pyscallback", function_name=funcname),
+        ClientsideFunction(namespace=PYSCALLBACK_NAMESPACE, function_name=funcname),
         *args,
     )
 
@@ -97,7 +99,7 @@ def pys_callback(app: Dash, config: dict[str, Any], *args) -> Any:
 
             code, funcname = extract_source_without_decorators(func)
 
-            code += f"""\n\nimport js\nfrom pyscript.ffi import create_proxy\njs.pys.setCallback("{funcname}", create_proxy({funcname}))\n"""
+            code += f"""\n\nimport js\nfrom pyscript.ffi import create_proxy\njs.dash_clientside.{PYSCALLBACK_OBJECT_NAME}.setCallback("{funcname}", create_proxy({funcname}))\n"""
 
             code = code.replace("\\", "\\\\").replace("\n", "\\n")
 
@@ -114,7 +116,7 @@ def pys_callback(app: Dash, config: dict[str, Any], *args) -> Any:
             }
 
             app.clientside_callback(
-                ClientsideFunction(namespace="pyscallback", function_name=funcname),
+                ClientsideFunction(namespace=PYSCALLBACK_NAMESPACE, function_name=funcname),
                 *args,
             )
 
@@ -140,51 +142,59 @@ def pys_start(debug: bool = True, assets: str = "assets") -> None:
 
     scriptscode = ""
     for details in pys_add_scripts.values():
-        scriptscode += f"""    globalThis.pys.addScript("{details['scr']}", `{details['config']}`, "{details['type']}");\n"""
+        scriptscode += f"""    globalThis.dash_clientside.{PYSCALLBACK_OBJECT_NAME}.addScript("{details['scr']}", `{details['config']}`, "{details['type']}");\n"""
 
     codescode = ""
     for codeid, details in pys_add_codes.items():
-        codescode += f"""    globalThis.pys.addScriptCode(`{details['code']}`, "{codeid}", `{details['config']}`, "{details['type']}");\n"""
+        codescode += f"""    globalThis.dash_clientside.{PYSCALLBACK_OBJECT_NAME}.addScriptCode(`{details['code']}`, "{codeid}", `{details['config']}`, "{details['type']}");\n"""
 
     funcscode = ""
     for function in pys_callback_functions:
-        funcscode += f"""    globalThis.pys.registerFunction("{function}");\n"""
+        funcscode += f"""    globalThis.dash_clientside.{PYSCALLBACK_OBJECT_NAME}.registerFunction("{function}");\n"""
 
     javascript_code = f"""
-class PysCallback {{
-    static #promises = new Map();
-    static #callbacks = new Map();
-    static #srcs = new Array();
-    static #codeids = new Array();
-    static #pystypes = {json.dumps(PYSCRIPT_TYPE)};
-    static #pysversion = "{PYSCRIPT_VERSION}";
+const PRIVATE_CONSTRUCTOR_KEY = Symbol();
 
-    static #createPromise(funcname) {{
-        if (!PysCallback.#promises.has(funcname)) {{
-            let resolve;
-            const promise = new Promise((res) => resolve = res);
-            PysCallback.#promises.set(funcname, {{ promise, resolve }});
+class PysCallback {{
+    #promises = new Map();
+    #callbacks = new Map();
+    #srcs = new Array();
+    #codeids = new Array();
+    #pystypes = {json.dumps(PYSCRIPT_TYPE)};
+    #pysversion = "{PYSCRIPT_VERSION}";
+
+    constructor(key) {{
+        if (key !== PRIVATE_CONSTRUCTOR_KEY) {{
+            throw new Error("Cannot instantiate PysCallback directly");
         }}
     }}
 
-    static initPyScript() {{
+    #createPromise(funcname) {{
+        if (!this.#promises.has(funcname)) {{
+            let resolve;
+            const promise = new Promise((res) => resolve = res);
+            this.#promises.set(funcname, {{ promise, resolve }});
+        }}
+    }}
+
+    initPyScript() {{
         let script = document.createElement("script");
-        script.src = `https://pyscript.net/releases/${{PysCallback.#pysversion}}/core.js`;
+        script.src = `https://pyscript.net/releases/${{this.#pysversion}}/core.js`;
         script.type = "module";
 
         let css = document.createElement("link");
-        css.href = `https://pyscript.net/releases/${{PysCallback.#pysversion}}/core.css`;
+        css.href = `https://pyscript.net/releases/${{this.#pysversion}}/core.css`;
         css.rel = "stylesheet";
 
         document.head.appendChild(script);
         document.head.appendChild(css);
     }}
 
-    static addScript(src, config, type = "mpy") {{
-        if (PysCallback.#srcs.includes(src)) return;
+    addScript(src, config, type = "mpy") {{
+        if (this.#srcs.includes(src)) return;
 
-        if (!PysCallback.#pystypes.includes(type)) {{
-            throw new Error(`Invalid type: ${{type}}. Supported types are: ${{PysCallback.#pystypes.join(", ")}}`);
+        if (!this.#pystypes.includes(type)) {{
+            throw new Error(`Invalid type: ${{type}}. Supported types are: ${{this.#pystypes.join(", ")}}`);
         }}
 
         const script = document.createElement("script");
@@ -200,11 +210,11 @@ class PysCallback {{
         document.head.appendChild(script);
     }}
 
-    static addScriptCode(code, codeid, config, type = "mpy") {{
-        if (PysCallback.#codeids.includes(codeid)) return;
+    addScriptCode(code, codeid, config, type = "mpy") {{
+        if (this.#codeids.includes(codeid)) return;
 
-        if (!PysCallback.#pystypes.includes(type)) {{
-            throw new Error(`Invalid type: ${{type}}. Supported types are: ${{PysCallback.#pystypes.join(", ")}}`);
+        if (!this.#pystypes.includes(type)) {{
+            throw new Error(`Invalid type: ${{type}}. Supported types are: ${{this.#pystypes.join(", ")}}`);
         }}
 
         const script = document.createElement("script");
@@ -219,69 +229,69 @@ class PysCallback {{
 
         document.body.appendChild(script);
 
-        PysCallback.#codeids.push(codeid);
+        this.#codeids.push(codeid);
     }}
 
-    static registerFunction(funcnames) {{
+    registerFunction(funcnames) {{
         if (!Array.isArray(funcnames)) {{
             funcnames = [funcnames];
         }}
 
         for (const funcname of funcnames) {{
-            globalThis.dash_clientside.pyscallback[funcname] = async (...args) => {{
-                return await PysCallback.call(funcname, ...args);
+            globalThis.dash_clientside.{PYSCALLBACK_NAMESPACE}[funcname] = async (...args) => {{
+                return await this.call(funcname, ...args);
             }};
         }}
     }}
 
-    static setCallback(funcname, callback) {{
-        if (!PysCallback.#promises.has(funcname)) {{
-            PysCallback.#createPromise(funcname);
+    setCallback(funcname, callback) {{
+        if (!this.#promises.has(funcname)) {{
+            this.#createPromise(funcname);
         }}
-        if (!PysCallback.#callbacks.has(funcname)) {{
-            PysCallback.#callbacks.set(funcname, callback);
+        if (!this.#callbacks.has(funcname)) {{
+            this.#callbacks.set(funcname, callback);
         }}
-        PysCallback.#resolve(funcname);
+        this.#resolve(funcname);
     }}
 
-    static hasCallback(funcname) {{
-        return PysCallback.#callbacks.has(funcname);
+    hasCallback(funcname) {{
+        return this.#callbacks.has(funcname);
     }}
 
-    static async call(funcname, ...args) {{
-        if (!PysCallback.#promises.has(funcname)) {{
-            PysCallback.#createPromise(funcname);
+    async call(funcname, ...args) {{
+        if (!this.#promises.has(funcname)) {{
+            this.#createPromise(funcname);
         }}
 
-        await PysCallback.#wait(funcname);
+        await this.#wait(funcname);
 
-        if (PysCallback.#callbacks.has(funcname)) {{
-            const callback = PysCallback.#callbacks.get(funcname);
+        if (this.#callbacks.has(funcname)) {{
+            const callback = this.#callbacks.get(funcname);
             return await callback.call(null, ...args);
         }}
     }}
 
-    static #resolve(funcname) {{
-        if (PysCallback.#promises.has(funcname)) {{
-            const {{ resolve }} = PysCallback.#promises.get(funcname);
+    #resolve(funcname) {{
+        if (this.#promises.has(funcname)) {{
+            const {{ resolve }} = this.#promises.get(funcname);
             resolve();
         }}
     }}
 
-    static async #wait(funcname) {{
-        if (!PysCallback.#promises.has(funcname)) {{
-            PysCallback.#createPromise(funcname);
+    async #wait(funcname) {{
+        if (!this.#promises.has(funcname)) {{
+            this.#createPromise(funcname);
         }}
-        const {{ promise }} = PysCallback.#promises.get(funcname);
+        const {{ promise }} = this.#promises.get(funcname);
         await promise;
     }}
 }}
 
-globalThis.pys = PysCallback;
 globalThis.dash_clientside = globalThis.dash_clientside || {{}};
-globalThis.dash_clientside.pyscallback = globalThis.dash_clientside.pyscallback || {{}};
+globalThis.dash_clientside.{PYSCALLBACK_NAMESPACE} = globalThis.dash_clientside.{PYSCALLBACK_NAMESPACE} || {{}};
 
-pys.initPyScript();
+globalThis.dash_clientside.{PYSCALLBACK_OBJECT_NAME} = new PysCallback(PRIVATE_CONSTRUCTOR_KEY);
+globalThis.dash_clientside.{PYSCALLBACK_OBJECT_NAME}.initPyScript();
 
 globalThis.addEventListener("DOMContentLoaded", () => {{
 {scriptscode}{codescode}{funcscode}}});

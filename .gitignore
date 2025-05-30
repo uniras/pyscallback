@@ -1,3 +1,5 @@
 __pycache__/
 backup/
 .venv/
+.vscode/
+__pyscallback.js
